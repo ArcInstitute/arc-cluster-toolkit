@@ -42,6 +42,107 @@ make
 
 > **_NOTE:_** You may need to [install dependencies](#dependencies) first.
 
+
+## Arc Slurm Staging Cluster Deployment
+
+Take the following steps to deploy and test Arc's slurm staging cluster.
+
+### Ensure permissions are set
+```sh
+gcloud iam service-accounts enable --project=arc-ops 592634133521-compute@developer.gserviceaccount.com
+
+gcloud projects add-iam-policy-binding arc-ops --member=serviceAccount:592634133521-compute@developer.gserviceaccount.com --role=roles/editor
+
+gcloud auth application-default login
+
+```
+
+### Install Cluster Toolkit
+
+```sh
+git clone https://github.com/GoogleCloudPlatform/cluster-toolkit.git
+cd cluster-toolkit/
+
+make
+./gcluster --version
+```
+
+Also install [Terraform](https://developer.hashicorp.com/terraform/tutorials/aws-get-started/install-cli):
+
+Example for macOS
+```sh
+brew tap hashicorp/tap
+brew install hashicorp/tap/terraform
+
+terraform -help
+```
+
+### Config Changes
+
+Slurm config files can be edited in `community/modules/scheduler/schedmd-slurm-gcp-v6-controller/etc/htc-slurm.conf.tpl`
+
+### Cluster Blueprint
+A cluster blueprint is a YAML file that defines the cluster. The gcluster command, that is built in previous step, uses the cluster blueprint to create a deployment folder. The deployment folder can then be used to deploy the cluster.
+
+Create the `hpc-slurm.yaml` blueprint with:
+```sh
+./gcluster create examples/hpc-slurm.yaml \
+    -l ERROR --vars project_id=arc-ops
+```
+
+Deploy the Cluster with
+```sh
+./gcluster deploy hpc-slurm
+```
+
+### Connecting to Cluster
+
+1. Navigate to Compute Engine [Console](https://console.cloud.google.com/compute)
+2. Connect to the hpcslurm-login-* VM using SSH-in-browser.
+3. Confirm slurm cluster is online:
+```sh
+[jeremy_sullivan_arcinstitute_org@hpcslurm-slurm-login-001 ~]$ sinfo
+PARTITION AVAIL  TIMELIMIT  NODES  STATE NODELIST
+compute      up   infinite     20  idle~ hpcslurm-computenodeset-[0-19]
+debug*       up   infinite      4  idle~ hpcslurm-debugnodeset-[0-3]
+```
+
+Run a test job:
+```sh
+srun -N 3 hostname
+```
+
+This command creates three compute nodes for your HPC cluster. This may take a minute while Slurm auto-scales to create the three nodes.
+
+When the job finishes you should see an output similar to:
+
+```sh
+srun -N 3 hostname
+    hpcslurm-debug-ghpc-0
+    hpcslurm-debug-ghpc-1
+    hpcslurm-debug-ghpc-2
+```
+The auto-scaled nodes are automatically destroyed by the Slurm controller if left idle for more than 60 seconds.
+
+### Clean Up
+To avoid incurring charges to our Google Cloud account for the resources used in the staging cluster, follow these steps:
+
+1. Go to the [VM instances page](https://console.cloud.google.com/compute/instances?invt=AblK-A&project=arc-ops&tab=instances) and check that the compute nodes are deleted. Compute nodes use the following naming convention: `hpcslurm-debug-ghpc-*`
+
+If you see any of these nodes, wait several minutes for them to be automatically deleted. This might take up to four minutes.
+
+2. After the compute nodes are removed, run the following command:
+```sh
+./gcluster destroy hpc-slurm --auto-approve
+...
+Destroy complete!
+Resources: xx destroyed.
+```
+
+3. Go to the [VM instances page](https://console.cloud.google.com/compute/instances?invt=AblK-A&project=arc-ops&tab=instances) and check that the VMs are deleted.
+
+Note: If the destroy command is run before Slurm shuts down the auto-scale nodes then the destroy command might fail. In this case, you can delete the VMs manually and rerun the destroy command.
+
 ## Cluster Toolkit Components
 
 Learn about the components that make up the Cluster Toolkit and more on how it works
