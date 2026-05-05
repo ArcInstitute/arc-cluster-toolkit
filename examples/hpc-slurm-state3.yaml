@@ -1,0 +1,261 @@
+# Copyright 2022 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+---
+
+blueprint_name: hpc-slurm-state3
+
+vars:
+  project_id: arc-state3
+  deployment_name: hpc-slurm-state3
+  region: us-east1
+  zone: us-east1-b
+  enable_cleanup_compute: true
+
+deployment_groups:
+- group: primary
+  modules:
+  - id: network
+    source: modules/network/vpc
+
+  - id: homefs
+    source: modules/file-system/filestore
+    use: [network]
+    settings:
+      local_mount: /home
+      size_gb: 5120
+
+  - id: datafs
+    source: modules/file-system/filestore
+    use: [network]
+    settings:
+      local_mount: /data
+      size_gb: 10240
+
+  - id: state3-data-curation-bucket
+    source: modules/file-system/pre-existing-network-storage
+    settings:
+      remote_mount: state3-data-curation
+      fs_type: gcsfuse
+      local_mount: /mnt/gcs/state3-data-curation
+      mount_options: defaults,_netdev,implicit_dirs,allow_other,dir_mode=0777,file_mode=766
+
+  - id: ssh_script
+    source: modules/scripts/startup-script
+    settings:
+      configure_ssh_host_patterns: ['hpcslurmstate3-*']
+
+  - id: compute_startup_script
+    source: modules/scripts/startup-script
+    settings:
+      configure_ssh_host_patterns: ['hpcslurmstate3-*']
+      local_ssd_filesystem:
+        fs_type: ext4
+        mountpoint: /scratch
+        permissions: "1777"
+
+  - id: debug_nodeset
+    source: community/modules/compute/schedmd-slurm-gcp-v6-nodeset
+    use: [network, ssh_script]
+    settings:
+      node_count_dynamic_max: 4
+      machine_type: n2-standard-4
+      enable_placement: false
+      allow_automatic_updates: false
+
+  - id: debug_partition
+    source: community/modules/compute/schedmd-slurm-gcp-v6-partition
+    use:
+    - debug_nodeset
+    settings:
+      partition_name: debug
+      exclusive: false
+      is_default: true
+
+  - id: compute_nodeset
+    source: community/modules/compute/schedmd-slurm-gcp-v6-nodeset
+    use: [network, compute_startup_script]
+    settings:
+      node_count_dynamic_max: 20
+      machine_type: c2d-standard-32
+      disk_type: pd-ssd
+      disk_size_gb: 100
+      bandwidth_tier: gvnic_enabled
+      allow_automatic_updates: false
+      enable_spot_vm: true
+      spot_instance_config:
+        termination_action: DELETE
+      additional_disks:
+      - device_name: local-ssd-0
+        disk_name: null
+        disk_size_gb: 375
+        disk_type: local-ssd
+        disk_labels: {}
+        auto_delete: true
+        boot: false
+      - device_name: local-ssd-1
+        disk_name: null
+        disk_size_gb: 375
+        disk_type: local-ssd
+        disk_labels: {}
+        auto_delete: true
+        boot: false
+      - device_name: local-ssd-2
+        disk_name: null
+        disk_size_gb: 375
+        disk_type: local-ssd
+        disk_labels: {}
+        auto_delete: true
+        boot: false
+      - device_name: local-ssd-3
+        disk_name: null
+        disk_size_gb: 375
+        disk_type: local-ssd
+        disk_labels: {}
+        auto_delete: true
+        boot: false
+      - device_name: local-ssd-4
+        disk_name: null
+        disk_size_gb: 375
+        disk_type: local-ssd
+        disk_labels: {}
+        auto_delete: true
+        boot: false
+      - device_name: local-ssd-5
+        disk_name: null
+        disk_size_gb: 375
+        disk_type: local-ssd
+        disk_labels: {}
+        auto_delete: true
+        boot: false
+      - device_name: local-ssd-6
+        disk_name: null
+        disk_size_gb: 375
+        disk_type: local-ssd
+        disk_labels: {}
+        auto_delete: true
+        boot: false
+      - device_name: local-ssd-7
+        disk_name: null
+        disk_size_gb: 375
+        disk_type: local-ssd
+        disk_labels: {}
+        auto_delete: true
+        boot: false
+
+  - id: compute_partition
+    source: community/modules/compute/schedmd-slurm-gcp-v6-partition
+    use:
+    - compute_nodeset
+    settings:
+      partition_name: compute
+
+  - id: computelarge_nodeset
+    source: community/modules/compute/schedmd-slurm-gcp-v6-nodeset
+    use: [network, compute_startup_script]
+    settings:
+      node_count_dynamic_max: 20
+      machine_type: c2d-standard-56
+      disk_type: pd-ssd
+      disk_size_gb: 100
+      bandwidth_tier: gvnic_enabled
+      allow_automatic_updates: false
+      enable_spot_vm: true
+      spot_instance_config:
+        termination_action: DELETE
+      additional_disks:
+      - device_name: local-ssd-0
+        disk_name: null
+        disk_size_gb: 375
+        disk_type: local-ssd
+        disk_labels: {}
+        auto_delete: true
+        boot: false
+      - device_name: local-ssd-1
+        disk_name: null
+        disk_size_gb: 375
+        disk_type: local-ssd
+        disk_labels: {}
+        auto_delete: true
+        boot: false
+      - device_name: local-ssd-2
+        disk_name: null
+        disk_size_gb: 375
+        disk_type: local-ssd
+        disk_labels: {}
+        auto_delete: true
+        boot: false
+      - device_name: local-ssd-3
+        disk_name: null
+        disk_size_gb: 375
+        disk_type: local-ssd
+        disk_labels: {}
+        auto_delete: true
+        boot: false
+      - device_name: local-ssd-4
+        disk_name: null
+        disk_size_gb: 375
+        disk_type: local-ssd
+        disk_labels: {}
+        auto_delete: true
+        boot: false
+      - device_name: local-ssd-5
+        disk_name: null
+        disk_size_gb: 375
+        disk_type: local-ssd
+        disk_labels: {}
+        auto_delete: true
+        boot: false
+      - device_name: local-ssd-6
+        disk_name: null
+        disk_size_gb: 375
+        disk_type: local-ssd
+        disk_labels: {}
+        auto_delete: true
+        boot: false
+      - device_name: local-ssd-7
+        disk_name: null
+        disk_size_gb: 375
+        disk_type: local-ssd
+        disk_labels: {}
+        auto_delete: true
+        boot: false
+
+  - id: computelarge_partition
+    source: community/modules/compute/schedmd-slurm-gcp-v6-partition
+    use:
+    - computelarge_nodeset
+    settings:
+      partition_name: computelarge
+
+  - id: slurm_login
+    source: community/modules/scheduler/schedmd-slurm-gcp-v6-login
+    use: [network]
+    settings:
+      machine_type: n2-standard-4
+      enable_login_public_ips: true
+
+  - id: slurm_controller
+    source: community/modules/scheduler/schedmd-slurm-gcp-v6-controller
+    use:
+    - network
+    - debug_partition
+    - compute_partition
+    - computelarge_partition
+    - homefs
+    - datafs
+    - state3-data-curation-bucket
+    - slurm_login
+    settings:
+      enable_controller_public_ips: true
