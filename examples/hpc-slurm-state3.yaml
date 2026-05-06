@@ -55,17 +55,41 @@ deployment_groups:
     source: modules/scripts/startup-script
     settings:
       configure_ssh_host_patterns: ['hpcslurmstate3-*']
-      docker:
-        enabled: true
-        world_writable: true
+      runners:
+      - type: shell
+        destination: install_docker.sh
+        content: |
+          #!/bin/bash
+          set -e
+          dnf -y module disable container-tools || true
+          dnf config-manager --add-repo https://download.docker.com/linux/rhel/docker-ce.repo
+          dnf -y install docker-ce docker-ce-cli containerd.io \
+            docker-buildx-plugin docker-compose-plugin
+          systemctl enable --now docker
+          mkdir -p /etc/systemd/system/docker.socket.d
+          printf '[Socket]\nSocketMode=0666\n' \
+            > /etc/systemd/system/docker.socket.d/override.conf
+          systemctl daemon-reload && systemctl restart docker
 
   - id: compute_startup_script
     source: modules/scripts/startup-script
     settings:
       configure_ssh_host_patterns: ['hpcslurmstate3-*']
-      docker:
-        enabled: true
-        world_writable: true
+      runners:
+      - type: shell
+        destination: install_docker.sh
+        content: |
+          #!/bin/bash
+          set -e
+          dnf -y module disable container-tools || true
+          dnf config-manager --add-repo https://download.docker.com/linux/rhel/docker-ce.repo
+          dnf -y install docker-ce docker-ce-cli containerd.io \
+            docker-buildx-plugin docker-compose-plugin
+          systemctl enable --now docker
+          mkdir -p /etc/systemd/system/docker.socket.d
+          printf '[Socket]\nSocketMode=0666\n' \
+            > /etc/systemd/system/docker.socket.d/override.conf
+          systemctl daemon-reload && systemctl restart docker
       local_ssd_filesystem:
         fs_type: ext4
         mountpoint: /scratch
