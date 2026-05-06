@@ -266,5 +266,3 @@ deployment_groups:
     settings:
       enable_controller_public_ips: true
       login_startup_script: $(ssh_script.startup_script)
-      cloud_parameters:
-        resume_timeout: 900
