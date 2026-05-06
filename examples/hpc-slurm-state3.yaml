@@ -54,7 +54,7 @@ deployment_groups:
   - id: ssh_script
     source: modules/scripts/startup-script
     settings:
-      configure_ssh_host_patterns: ['hpcslurmstate3-*']
+      configure_ssh_host_patterns: ['hpcslurmst-*']
       runners:
       - type: shell
         destination: install_docker.sh
@@ -73,7 +73,7 @@ deployment_groups:
   - id: compute_startup_script
     source: modules/scripts/startup-script
     settings:
-      configure_ssh_host_patterns: ['hpcslurmstate3-*']
+      configure_ssh_host_patterns: ['hpcslurmst-*']
       runners:
       - type: shell
         destination: install_docker.sh
