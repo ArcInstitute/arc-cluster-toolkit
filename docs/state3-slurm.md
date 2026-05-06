@@ -147,7 +147,9 @@ sbatch --partition=compute --nodes=4 my-mpi-job.sh
 
 ## Containers
 
-Cluster nodes have **Apptainer** (the successor to Singularity) pre-installed. Docker is not available on compute nodes — Apptainer provides equivalent functionality without requiring root, which is standard for HPC.
+> **Container support is not enabled by default.** The base SchedMD Slurm image does not include Apptainer. To use containers, a cluster admin must add Apptainer via a custom image build or startup script (see [toolkit example](../community/examples/hpc-slurm6-apptainer.yaml)).
+
+**Apptainer** (the successor to Singularity) is the recommended container runtime. Docker is not available on compute nodes. `srun --container-image` (pyxis/enroot) is also not available — that requires a GPU-specific image.
 
 ### Pulling images
 
