@@ -145,6 +145,63 @@ sbatch --partition=computelarge --mem=200G --cpus-per-task=56 my-job.sh
 sbatch --partition=compute --nodes=4 my-mpi-job.sh
 ```
 
+## Containers
+
+Cluster nodes have **Apptainer** (the successor to Singularity) pre-installed. Docker is not available on compute nodes — Apptainer provides equivalent functionality without requiring root, which is standard for HPC.
+
+### Pulling images
+
+```bash
+# Pull from Docker Hub (saves as a .sif file)
+apptainer pull docker://ubuntu:22.04
+apptainer pull docker://continuumio/miniconda3
+
+# Pull from GitHub Container Registry
+apptainer pull docker://ghcr.io/org/image:tag
+```
+
+Store `.sif` files in `/data/containers/` so they persist across sessions. Pull images on the login node or a `debug` node — avoid pulling inside a SPOT compute job.
+
+> **Note:** `srun --container-image` / `--container-name` (pyxis/enroot) and `docker run` are **not available** on this cluster. Apptainer is the supported container runtime.
+
+### Running containers
+
+```bash
+# Run a command inside the container
+apptainer exec --bind /data,/scratch my-image.sif my-command --arg
+
+# Interactive shell
+apptainer shell --bind /data,/scratch my-image.sif
+```
+
+### Container batch job
+
+```bash
+#!/bin/bash
+#SBATCH --job-name=container-job
+#SBATCH --partition=compute
+#SBATCH --cpus-per-task=32
+#SBATCH --mem=120G
+#SBATCH --requeue
+#SBATCH --output=/data/logs/%j.out
+
+SIF=/data/containers/my-pipeline.sif
+export TMPDIR=/scratch/$SLURM_JOB_ID
+mkdir -p $TMPDIR
+
+gcloud storage cp -r gs://state3-data-curation/my-input/ $TMPDIR/
+
+apptainer exec \
+  --bind /data:/data \
+  --bind /scratch:/scratch \
+  $SIF my-pipeline \
+    --input $TMPDIR/my-input \
+    --output $TMPDIR/output \
+    --threads $SLURM_CPUS_PER_TASK
+
+gcloud storage cp -r $TMPDIR/output/ gs://state3-data-curation/results/
+```
+
 ## Claude Code
 
 [Claude Code](https://code.claude.com/docs/en/quickstart) is available on the cluster. Install it in your home directory (persists across sessions):
