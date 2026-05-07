@@ -60,9 +60,9 @@ The partitions are **dynamic** — at rest, no nodes are running. When a job is 
 
 | Partition | Machine | vCPUs | RAM | Local Scratch | Notes |
 |-----------|---------|-------|-----|---------------|-------|
-| `debug` (default) | n2-standard-4 | 4 | 16 GB | — | On-demand, non-preemptible. Nodes stay up after jobs end. Use for interactive work and data transfer. |
-| `compute` | c2d-standard-32 | 32 | 128 GB | 3 TB NVMe (`/scratch`) | SPOT (preemptible). Use for standard pipeline runs. |
-| `computelarge` | c2d-standard-56 | 56 | 224 GB | 3 TB NVMe (`/scratch`) | SPOT (preemptible). Use for memory-intensive jobs. |
+| `debug` (default) | n2-standard-8 | 8 | 32 GB | — | On-demand, non-preemptible. Nodes stay up after jobs end. Use for interactive work and data transfer. |
+| `compute` | c4d-standard-32-lssd | 32 | 128 GB | 750 GB NVMe (`/scratch`) | SPOT (preemptible). Use for standard pipeline runs. |
+| `computelarge` | c4d-standard-64-lssd | 64 | 256 GB | 2.25 TB NVMe (`/scratch`) | SPOT (preemptible). Use for memory-intensive jobs. |
 
 > **Note on SPOT partitions:** `compute` and `computelarge` use preemptible VMs for cost savings. Jobs may be interrupted if GCP reclaims capacity. **Batch jobs (`sbatch`) are automatically requeued when a node is preempted** — Slurm detects the node failure and re-schedules the job on a new node. Interactive `srun` sessions are not requeued and will need to be restarted manually. For long-running jobs, write intermediate checkpoints to `/data` so your pipeline can resume from where it left off rather than restarting from scratch.
 
@@ -139,7 +139,7 @@ sinfo -R                        # show node failure reasons
 srun -p compute -N 1 --cpus-per-task=32 --pty bash
 
 # Large memory job on computelarge
-sbatch --partition=computelarge --mem=200G --cpus-per-task=56 my-job.sh
+sbatch --partition=computelarge --mem=240G --cpus-per-task=64 my-job.sh
 
 # Multi-node job
 sbatch --partition=compute --nodes=4 my-mpi-job.sh
