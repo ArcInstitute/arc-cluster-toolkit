@@ -19,8 +19,10 @@ blueprint_name: hpc-slurm
 vars:
   project_id:  ## Set GCP Project ID Here ##
   deployment_name: hpc-slurm
-  region: us-central1
-  zone: us-central1-a
+  region: us-east1
+  zone: us-east1-b
+  enable_cleanup_compute: true
+  ultima_bucket_name: ultima-auto-demux
 
 # Documentation for each of the modules used below can be found at
 # https://github.com/GoogleCloudPlatform/hpc-toolkit/blob/main/modules/README.md
@@ -39,12 +41,61 @@ deployment_groups:
     settings:
       local_mount: /home
 
+  - id: ultima-bucket
+    source: modules/file-system/pre-existing-network-storage
+    settings:
+      remote_mount: $(vars.ultima_bucket_name)
+      fs_type: gcsfuse
+      local_mount: /mnt/$(vars.ultima_bucket_name)
+      # Bucket will be read only.
+      mount_options: defaults,_netdev,implicit_dirs,allow_other,ro
+
+  - id: illumina-bucket
+    source: modules/file-system/pre-existing-network-storage
+    settings:
+      remote_mount: illumina-auto-demux
+      fs_type: gcsfuse
+      local_mount: /mnt/illumina-auto-demux
+      # Bucket will be read only.
+      mount_options: defaults,_netdev,implicit_dirs,allow_other,ro
+  
+  - id: cellranger-bucket
+    source: modules/file-system/pre-existing-network-storage
+    settings:
+      remote_mount: arc-ctc-cellranger
+      fs_type: gcsfuse
+      local_mount: /mnt/arc-ctc-cellranger
+      mount_options: defaults,_netdev,implicit_dirs,allow_other,dir_mode=0777,file_mode=766
+  
+  - id: arc-binseq-bucket
+    source: modules/file-system/pre-existing-network-storage
+    settings:
+      remote_mount: arc-binseq
+      fs_type: gcsfuse
+      local_mount: /mnt/arc-binseq
+      mount_options: defaults,_netdev,implicit_dirs,allow_other,dir_mode=0777,file_mode=766
+
+  - id: arc-cyto-bucket
+    source: modules/file-system/pre-existing-network-storage
+    settings:
+      remote_mount: arc-cyto
+      fs_type: gcsfuse
+      local_mount: /mnt/arc-cyto
+      mount_options: defaults,_netdev,implicit_dirs,allow_other,dir_mode=0777,file_mode=766
+
+
+  - id: ssh_script
+    source: modules/scripts/startup-script
+    settings:
+      configure_ssh_host_patterns: ['hpcslurm-*']
+
+
   - id: debug_nodeset
     source: community/modules/compute/schedmd-slurm-gcp-v6-nodeset
-    use: [network]
+    use: [network,ssh_script]
     settings:
       node_count_dynamic_max: 4
-      machine_type: n2-standard-2
+      machine_type: n2-standard-4
       enable_placement: false # the default is: true
       allow_automatic_updates: false
 
@@ -57,40 +108,41 @@ deployment_groups:
       exclusive: false # allows nodes to stay up after jobs are done
       is_default: true
 
-  - id: compute_nodeset
+  - id: md_compute_nodeset
     source: community/modules/compute/schedmd-slurm-gcp-v6-nodeset
-    use: [network]
+    use: [network,ssh_script]
     settings:
-      node_count_dynamic_max: 20
+      node_count_dynamic_max: 40
+      machine_type: c2d-standard-56
+      disk_type: pd-ssd
+      disk_size_gb: 10240
       bandwidth_tier: gvnic_enabled
       allow_automatic_updates: false
 
-  - id: compute_partition
+  - id: md_compute_partition
     source: community/modules/compute/schedmd-slurm-gcp-v6-partition
     use:
-    - compute_nodeset
+    - md_compute_nodeset
     settings:
-      partition_name: compute
+      partition_name: computemedium
 
-  - id: h3_nodeset
+  - id: bg_compute_nodeset
     source: community/modules/compute/schedmd-slurm-gcp-v6-nodeset
-    use: [network]
+    use: [network,ssh_script]
     settings:
-      node_count_dynamic_max: 20
-      # Note that H3 is available in only specific zones. https://cloud.google.com/compute/docs/regions-zones
-      machine_type: h3-standard-88
-      # H3 does not support pd-ssd and pd-standard
-      # https://cloud.google.com/compute/docs/compute-optimized-machines#h3_disks
-      disk_type: pd-balanced
+      node_count_dynamic_max: 40
+      machine_type: c2d-standard-112
+      disk_type: pd-ssd
+      disk_size_gb: 10240
       bandwidth_tier: gvnic_enabled
       allow_automatic_updates: false
 
-  - id: h3_partition
+  - id: bg_compute_partition
     source: community/modules/compute/schedmd-slurm-gcp-v6-partition
     use:
-    - h3_nodeset
+    - bg_compute_nodeset
     settings:
-      partition_name: h3
+      partition_name: computelarge
 
   - id: slurm_login
     source: community/modules/scheduler/schedmd-slurm-gcp-v6-login
@@ -104,9 +156,14 @@ deployment_groups:
     use:
     - network
     - debug_partition
-    - compute_partition
-    - h3_partition
+    - md_compute_partition
+    - bg_compute_partition
     - homefs
+    - ultima-bucket
+    - illumina-bucket
+    - arc-binseq-bucket
+    - arc-cyto-bucket
+    - cellranger-bucket
     - slurm_login
     settings:
       enable_controller_public_ips: true

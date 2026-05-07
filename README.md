@@ -77,10 +77,6 @@ brew install hashicorp/tap/terraform
 terraform -help
 ```
 
-### Config Changes
-
-Slurm config files can be edited in `community/modules/scheduler/schedmd-slurm-gcp-v6-controller/etc/htc-slurm.conf.tpl`
-
 ### Cluster Blueprint
 A cluster blueprint is a YAML file that defines the cluster. The gcluster command, that is built in previous step, uses the cluster blueprint to create a deployment folder. The deployment folder can then be used to deploy the cluster.
 
@@ -123,6 +119,12 @@ srun -N 3 hostname
     hpcslurm-debug-ghpc-2
 ```
 The auto-scaled nodes are automatically destroyed by the Slurm controller if left idle for more than 60 seconds.
+
+### Slurm Config Changes
+
+To test slurm config changes, first connect to the `hpcslurm-controller` VM.
+
+Login as the slurm user with `sudo su slurm`. Modify the `/etc/slurm/slurm.conf` and run `scontrol reconfigure` to persist the changes.
 
 ### Clean Up
 To avoid incurring charges to our Google Cloud account for the resources used in the staging cluster, follow these steps:

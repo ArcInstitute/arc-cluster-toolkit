@@ -1,0 +1,187 @@
+# Copyright 2022 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+---
+
+blueprint_name: hpc-slurm-state3
+
+vars:
+  project_id: arc-state3
+  deployment_name: hpc-slurm-state3
+  region: us-east1
+  zone: us-east1-b
+  enable_cleanup_compute: true
+  slurm_image:
+    family: arc-state3-slurm-docker
+    project: arc-state3
+  disk_size: 50
+
+deployment_groups:
+- group: primary
+  modules:
+  - id: network
+    source: modules/network/vpc
+
+  - id: homefs
+    source: modules/file-system/filestore
+    use: [network]
+    settings:
+      local_mount: /home
+      size_gb: 5120
+
+  - id: datafs
+    source: modules/file-system/filestore
+    use: [network]
+    settings:
+      local_mount: /data
+      size_gb: 10240
+
+  - id: state3-data-curation-bucket
+    source: modules/file-system/pre-existing-network-storage
+    settings:
+      remote_mount: state3-data-curation
+      fs_type: gcsfuse
+      local_mount: /mnt/gcs/state3-data-curation
+      mount_options: defaults,_netdev,implicit_dirs,allow_other,dir_mode=0777,file_mode=766
+
+  - id: ssh_script
+    source: modules/scripts/startup-script
+    settings:
+      configure_ssh_host_patterns: ['hpcslurmst-*']
+
+  - id: compute_startup_script
+    source: modules/scripts/startup-script
+    settings:
+      configure_ssh_host_patterns: ['hpcslurmst-*']
+      local_ssd_filesystem:
+        fs_type: ext4
+        mountpoint: /scratch
+        permissions: "1777"
+
+  - id: debug_nodeset
+    source: community/modules/compute/schedmd-slurm-gcp-v6-nodeset
+    use: [network, ssh_script]
+    settings:
+      node_count_dynamic_max: 4
+      machine_type: n2-standard-8
+      enable_placement: false
+      allow_automatic_updates: false
+      instance_image: $(vars.slurm_image)
+      instance_image_custom: true
+
+  - id: debug_partition
+    source: community/modules/compute/schedmd-slurm-gcp-v6-partition
+    use:
+    - debug_nodeset
+    settings:
+      partition_name: debug
+      exclusive: false
+      is_default: true
+
+  - id: compute_nodeset
+    source: community/modules/compute/schedmd-slurm-gcp-v6-nodeset
+    use: [network, compute_startup_script]
+    settings:
+      node_count_dynamic_max: 20
+      machine_type: c4d-standard-32-lssd
+      disk_type: hyperdisk-balanced
+      disk_size_gb: 100
+      bandwidth_tier: gvnic_enabled
+      allow_automatic_updates: false
+      instance_image: $(vars.slurm_image)
+      instance_image_custom: true
+      enable_spot_vm: true
+      spot_instance_config:
+        termination_action: DELETE
+
+  - id: compute_partition
+    source: community/modules/compute/schedmd-slurm-gcp-v6-partition
+    use:
+    - compute_nodeset
+    settings:
+      partition_name: compute
+
+  - id: computelarge_nodeset
+    source: community/modules/compute/schedmd-slurm-gcp-v6-nodeset
+    use: [network, compute_startup_script]
+    settings:
+      node_count_dynamic_max: 20
+      machine_type: c4d-standard-64-lssd
+      disk_type: hyperdisk-balanced
+      disk_size_gb: 100
+      bandwidth_tier: gvnic_enabled
+      allow_automatic_updates: false
+      instance_image: $(vars.slurm_image)
+      instance_image_custom: true
+      enable_spot_vm: true
+      spot_instance_config:
+        termination_action: DELETE
+
+  - id: computelarge_partition
+    source: community/modules/compute/schedmd-slurm-gcp-v6-partition
+    use:
+    - computelarge_nodeset
+    settings:
+      partition_name: computelarge
+
+  - id: slurm_login
+    source: community/modules/scheduler/schedmd-slurm-gcp-v6-login
+    use: [network]
+    settings:
+      machine_type: n2-standard-4
+      enable_login_public_ips: true
+      instance_image: $(vars.slurm_image)
+      instance_image_custom: true
+
+  - id: slurm_controller
+    source: community/modules/scheduler/schedmd-slurm-gcp-v6-controller
+    use:
+    - network
+    - debug_partition
+    - compute_partition
+    - computelarge_partition
+    - homefs
+    - datafs
+    - state3-data-curation-bucket
+    - slurm_login
+    settings:
+      enable_controller_public_ips: true
+      login_startup_script: $(ssh_script.startup_script)
+
+- group: packer
+  modules:
+  - id: slurm-docker-image
+    source: modules/packer/custom-image
+    kind: packer
+    use: [network]
+    settings:
+      source_image_project_id: [schedmd-slurm-public]
+      source_image_family: slurm-gcp-6-8-hpc-rocky-linux-8
+      disk_size: $(vars.disk_size)
+      image_family: $(vars.slurm_image.family)
+      machine_type: n2-standard-4
+      state_timeout: 15m
+      startup_script: |
+        #!/bin/bash
+        set -e
+        dnf config-manager --add-repo https://download.docker.com/linux/rhel/docker-ce.repo
+        dnf -y install docker-ce docker-ce-cli containerd.io \
+          docker-buildx-plugin docker-compose-plugin
+        systemctl enable docker.socket
+        mkdir -p /etc/systemd/system/docker.socket.d
+        printf '[Socket]\nSocketMode=0666\n' \
+          > /etc/systemd/system/docker.socket.d/override.conf
+        systemctl daemon-reload
+        dnf config-manager --add-repo https://cli.github.com/packages/rpm/gh-cli.repo
+        dnf -y install gh
