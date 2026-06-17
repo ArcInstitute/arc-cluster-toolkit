@@ -66,6 +66,17 @@ The partitions are **dynamic** — at rest, no nodes are running. When a job is 
 
 > **Note on SPOT partitions:** `compute` and `computelarge` use preemptible VMs for cost savings. Jobs may be interrupted if GCP reclaims capacity. **Batch jobs (`sbatch`) are automatically requeued when a node is preempted** — Slurm detects the node failure and re-schedules the job on a new node. Interactive `srun` sessions are not requeued and will need to be restarted manually. For long-running jobs, write intermediate checkpoints to `/data` so your pipeline can resume from where it left off rather than restarting from scratch.
 
+### Login-node resource limits
+
+The login node is for light interactive use (editing, job submission, small data transfers) — **run heavy compute as Slurm jobs, not on the login node.** To keep it responsive for everyone, each user's sessions are capped:
+
+| Resource | Per-user cap | Mechanism |
+|----------|--------------|-----------|
+| Memory | 8 GiB | systemd `user-.slice` `MemoryMax` — exceeding it OOM-kills only that user's processes, not the whole node |
+| CPU | 2 cores | systemd `user-.slice` `CPUQuota=200%` |
+
+Hitting a cap kills/throttles only your own session, never the node. These are applied by the login startup script (`login_setup` in the blueprint) and persisted in the journal (`Storage=persistent`) so failures are diagnosable after a reboot.
+
 ### Local Scratch (`/scratch`)
 
 Compute nodes have 8 × 375 GB NVMe SSDs RAIDed together and mounted at `/scratch` (3 TB, world-writable). This is fast local storage — use it for temporary working files during a job. **Data on `/scratch` is lost when the node shuts down.**

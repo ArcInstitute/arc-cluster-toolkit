@@ -60,6 +60,42 @@ deployment_groups:
     settings:
       configure_ssh_host_patterns: ['hpcslurmst-*']
 
+  # Login-node-only startup: SSH host config + OS hardening. Kept separate from
+  # ssh_script (which is shared with the debug nodeset) so the per-user resource
+  # caps below apply ONLY to the login node, never to compute nodes running jobs.
+  - id: login_setup
+    source: modules/scripts/startup-script
+    settings:
+      configure_ssh_host_patterns: ['hpcslurmst-*']
+      runners:
+      - type: shell
+        destination: arc_login_hardening.sh
+        content: |
+          #!/bin/bash
+          # Arc login-node hardening:
+          #  (1) Cap per-user memory/CPU so one user cannot OOM or CPU-starve the
+          #      shared login node. With per-user-slice limits, the OOM-killer
+          #      stays inside the offending user's cgroup, protecting sshd, system
+          #      services, and other users. Heavy compute belongs in Slurm jobs.
+          #  (2) Persist journald so OS-level root-cause logs survive reboots
+          #      (the default is volatile/RAM-only, wiped on every boot).
+          # See docs/state3-slurm.md ("Login-node resource limits").
+          set -euo pipefail
+          mkdir -p /etc/systemd/system/user-.slice.d
+          printf '%s\n' \
+            '# Arc: per-user resource caps on the login node' \
+            '[Slice]' 'MemoryAccounting=yes' 'MemoryMax=8G' \
+            'CPUAccounting=yes' 'CPUQuota=200%' \
+            > /etc/systemd/system/user-.slice.d/50-arc-limits.conf
+          mkdir -p /etc/systemd/journald.conf.d
+          printf '%s\n' \
+            '[Journal]' 'Storage=persistent' 'SystemMaxUse=1G' \
+            > /etc/systemd/journald.conf.d/50-arc-persistent.conf
+          mkdir -p /var/log/journal
+          systemd-tmpfiles --create --prefix /var/log/journal || true
+          systemctl daemon-reload
+          systemctl restart systemd-journald || true
+
   - id: compute_startup_script
     source: modules/scripts/startup-script
     settings:
@@ -157,7 +193,7 @@ deployment_groups:
     - slurm_login
     settings:
       enable_controller_public_ips: true
-      login_startup_script: $(ssh_script.startup_script)
+      login_startup_script: $(login_setup.startup_script)
 
 - group: packer
   modules:
