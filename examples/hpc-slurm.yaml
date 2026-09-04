@@ -16,6 +16,16 @@
 
 blueprint_name: hpc-slurm
 
+# Remote state so this cluster can be deployed from any machine, not just the
+# laptop that first ran gcluster. Bucket is versioned, so a corrupted or
+# truncated state can be rolled back to a previous generation.
+# gcluster derives the object prefix automatically as
+# "hpc-slurm/${var.deployment_name}/primary" (pkg/config/expand.go).
+terraform_backend_defaults:
+  type: gcs
+  configuration:
+    bucket: arc-cyto-tfstate
+
 vars:
   project_id:  ## Set GCP Project ID Here ##
   deployment_name: hpc-slurm
