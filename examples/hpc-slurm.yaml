@@ -144,18 +144,21 @@ deployment_groups:
     settings:
       partition_name: computelarge
 
-  # Big-memory partitions. M3 (Ice Lake) is the newest memory-optimized family
-  # offered in us-east1-b; pd-ssd is the only Persistent Disk type M3 accepts.
-  # Both nodesets draw on the same regional M3_CPUS quota (248 in us-east1), so
-  # the node_count_dynamic_max values below are capped at 2 + 2 = 192 vCPU.
+  # Big-memory partitions, on C4 (Granite Rapids / Emerald Rapids Xeon) — the
+  # newest family in us-east1-b, and the highest vCPU count available at these
+  # memory sizes. C4 is Hyperdisk-only: pd-ssd is rejected at instance creation
+  # ("pd-ssd disk type cannot be used by c4-* machine type"), so disk_type must
+  # be hyperdisk-balanced.
+  # Requires a C4 CPUs per project per region quota increase in us-east1
+  # (1152 vCPU to run both partitions at full node_count_dynamic_max).
   # Placement groups are off: these are single-node, memory-bound jobs.
   - id: bigmem1t_nodeset
     source: community/modules/compute/schedmd-slurm-gcp-v6-nodeset
     use: [network, ssh_script]
     settings:
-      node_count_dynamic_max: 2
-      machine_type: m3-ultramem-32  # 32 vCPU / 976 GB
-      disk_type: pd-ssd
+      node_count_dynamic_max: 4
+      machine_type: c4-highmem-144  # 144 vCPU / 1116 GB
+      disk_type: hyperdisk-balanced
       disk_size_gb: 2048
       bandwidth_tier: gvnic_enabled
       enable_placement: false
@@ -173,8 +176,8 @@ deployment_groups:
     use: [network, ssh_script]
     settings:
       node_count_dynamic_max: 2
-      machine_type: m3-ultramem-64  # 64 vCPU / 1952 GB
-      disk_type: pd-ssd
+      machine_type: c4-highmem-288  # 288 vCPU / 2232 GB
+      disk_type: hyperdisk-balanced
       disk_size_gb: 2048
       bandwidth_tier: gvnic_enabled
       enable_placement: false
