@@ -144,6 +144,49 @@ deployment_groups:
     settings:
       partition_name: computelarge
 
+  # Big-memory partitions. M3 (Ice Lake) is the newest memory-optimized family
+  # offered in us-east1-b; pd-ssd is the only Persistent Disk type M3 accepts.
+  # Both nodesets draw on the same regional M3_CPUS quota (248 in us-east1), so
+  # the node_count_dynamic_max values below are capped at 2 + 2 = 192 vCPU.
+  # Placement groups are off: these are single-node, memory-bound jobs.
+  - id: bigmem1t_nodeset
+    source: community/modules/compute/schedmd-slurm-gcp-v6-nodeset
+    use: [network, ssh_script]
+    settings:
+      node_count_dynamic_max: 2
+      machine_type: m3-ultramem-32  # 32 vCPU / 976 GB
+      disk_type: pd-ssd
+      disk_size_gb: 2048
+      bandwidth_tier: gvnic_enabled
+      enable_placement: false
+      allow_automatic_updates: false
+
+  - id: bigmem1t_partition
+    source: community/modules/compute/schedmd-slurm-gcp-v6-partition
+    use:
+    - bigmem1t_nodeset
+    settings:
+      partition_name: bigmem1t
+
+  - id: bigmem2t_nodeset
+    source: community/modules/compute/schedmd-slurm-gcp-v6-nodeset
+    use: [network, ssh_script]
+    settings:
+      node_count_dynamic_max: 2
+      machine_type: m3-ultramem-64  # 64 vCPU / 1952 GB
+      disk_type: pd-ssd
+      disk_size_gb: 2048
+      bandwidth_tier: gvnic_enabled
+      enable_placement: false
+      allow_automatic_updates: false
+
+  - id: bigmem2t_partition
+    source: community/modules/compute/schedmd-slurm-gcp-v6-partition
+    use:
+    - bigmem2t_nodeset
+    settings:
+      partition_name: bigmem2t
+
   - id: slurm_login
     source: community/modules/scheduler/schedmd-slurm-gcp-v6-login
     use: [network]
@@ -158,6 +201,8 @@ deployment_groups:
     - debug_partition
     - md_compute_partition
     - bg_compute_partition
+    - bigmem1t_partition
+    - bigmem2t_partition
     - homefs
     - ultima-bucket
     - illumina-bucket
