@@ -16,6 +16,16 @@
 
 blueprint_name: hpc-slurm
 
+# Remote state so this cluster can be deployed from any machine, not just the
+# laptop that first ran gcluster. Bucket is versioned, so a corrupted or
+# truncated state can be rolled back to a previous generation.
+# gcluster derives the object prefix automatically as
+# "hpc-slurm/${var.deployment_name}/primary" (pkg/config/expand.go).
+terraform_backend_defaults:
+  type: gcs
+  configuration:
+    bucket: arc-cyto-tfstate
+
 vars:
   project_id:  ## Set GCP Project ID Here ##
   deployment_name: hpc-slurm
@@ -144,6 +154,52 @@ deployment_groups:
     settings:
       partition_name: computelarge
 
+  # Big-memory partitions, on C4 (Granite Rapids / Emerald Rapids Xeon) — the
+  # newest family in us-east1-b, and the highest vCPU count available at these
+  # memory sizes. C4 is Hyperdisk-only: pd-ssd is rejected at instance creation
+  # ("pd-ssd disk type cannot be used by c4-* machine type"), so disk_type must
+  # be hyperdisk-balanced.
+  # Requires a C4 CPUs per project per region quota increase in us-east1
+  # (1152 vCPU to run both partitions at full node_count_dynamic_max).
+  # Placement groups are off: these are single-node, memory-bound jobs.
+  - id: bigmem1t_nodeset
+    source: community/modules/compute/schedmd-slurm-gcp-v6-nodeset
+    use: [network, ssh_script]
+    settings:
+      node_count_dynamic_max: 4
+      machine_type: c4-highmem-144  # 144 vCPU / 1116 GB
+      disk_type: hyperdisk-balanced
+      disk_size_gb: 2048
+      bandwidth_tier: gvnic_enabled
+      enable_placement: false
+      allow_automatic_updates: false
+
+  - id: bigmem1t_partition
+    source: community/modules/compute/schedmd-slurm-gcp-v6-partition
+    use:
+    - bigmem1t_nodeset
+    settings:
+      partition_name: bigmem1t
+
+  - id: bigmem2t_nodeset
+    source: community/modules/compute/schedmd-slurm-gcp-v6-nodeset
+    use: [network, ssh_script]
+    settings:
+      node_count_dynamic_max: 2
+      machine_type: c4-highmem-288  # 288 vCPU / 2232 GB
+      disk_type: hyperdisk-balanced
+      disk_size_gb: 2048
+      bandwidth_tier: gvnic_enabled
+      enable_placement: false
+      allow_automatic_updates: false
+
+  - id: bigmem2t_partition
+    source: community/modules/compute/schedmd-slurm-gcp-v6-partition
+    use:
+    - bigmem2t_nodeset
+    settings:
+      partition_name: bigmem2t
+
   - id: slurm_login
     source: community/modules/scheduler/schedmd-slurm-gcp-v6-login
     use: [network]
@@ -158,6 +214,8 @@ deployment_groups:
     - debug_partition
     - md_compute_partition
     - bg_compute_partition
+    - bigmem1t_partition
+    - bigmem2t_partition
     - homefs
     - ultima-bucket
     - illumina-bucket
