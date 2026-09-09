@@ -29,8 +29,13 @@ terraform_backend_defaults:
 vars:
   project_id:  ## Set GCP Project ID Here ##
   deployment_name: hpc-slurm
-  region: us-east1
-  zone: us-east1-b
+  # Whole cluster lives in us-west1, co-located with the illumina-auto-demux
+  # bucket (the only single-region bucket; the other four are US multi-region
+  # and read fine from here). This replaces the earlier split-region setup,
+  # where cross-region /home cost ~200x on Python startup and cross-zone
+  # controller resolution needed a project-wide VmDnsSetting override.
+  region: us-west1
+  zone: us-west1-b
   enable_cleanup_compute: true
   ultima_bucket_name: ultima-auto-demux
 
@@ -42,14 +47,21 @@ deployment_groups:
   modules:
   # Source is an embedded module, denoted by "modules/*" without ./, ../, /
   # as a prefix. To refer to a local module, prefix with ./, ../ or /
+  # Single subnet in vars.region again. The explicit two-subnet list, and the
+  # description-ForceNew workaround it needed, existed only to bridge
+  # us-east1/us-west1 and are unnecessary now the cluster is in one region.
   - id: network
     source: modules/network/vpc
 
+  # BASIC_HDD capacity can be raised in place (and never lowered). Was 1024 GB
+  # and sitting at 84% full, which is tight for the only shared writable
+  # filesystem on the cluster.
   - id: homefs
     source: modules/file-system/filestore
     use: [network]
     settings:
       local_mount: /home
+      size_gb: 5120
 
   - id: ultima-bucket
     source: modules/file-system/pre-existing-network-storage
@@ -118,13 +130,20 @@ deployment_groups:
       exclusive: false # allows nodes to stay up after jobs are done
       is_default: true
 
+  # Compute partitions are Intel C4, not AMD C2D, because `cyto` requires
+  # AVX-512 and dies with SIGILL on AMD EPYC. Verified 2026-09-09 by running
+  # `cyto --version` on one node of each family: works on n2 and c4 (Intel,
+  # avx512f/dq/bw/vl present), core-dumps on c2d-standard-56 (EPYC 7B13, no
+  # avx512 flags at all). Tiffany's cyto_FLP021 failed this way after staging
+  # 1.7 TB. C4 is also newer and higher-core than the c2d it replaces.
+  # C4 is Hyperdisk-only, so disk_type cannot be pd-ssd.
   - id: md_compute_nodeset
     source: community/modules/compute/schedmd-slurm-gcp-v6-nodeset
     use: [network,ssh_script]
     settings:
       node_count_dynamic_max: 40
-      machine_type: c2d-standard-56
-      disk_type: pd-ssd
+      machine_type: c4-standard-96  # 96 vCPU / 48 Slurm cores / 360 GB (was c2d-standard-56: 28 cores / 224 GB)
+      disk_type: hyperdisk-balanced
       disk_size_gb: 10240
       bandwidth_tier: gvnic_enabled
       allow_automatic_updates: false
@@ -141,8 +160,8 @@ deployment_groups:
     use: [network,ssh_script]
     settings:
       node_count_dynamic_max: 40
-      machine_type: c2d-standard-112
-      disk_type: pd-ssd
+      machine_type: c4-standard-192  # 192 vCPU / 96 Slurm cores / 720 GB (was c2d-standard-112: 56 cores / 448 GB)
+      disk_type: hyperdisk-balanced  # C4 is Hyperdisk-only
       disk_size_gb: 10240
       bandwidth_tier: gvnic_enabled
       allow_automatic_updates: false
@@ -155,12 +174,12 @@ deployment_groups:
       partition_name: computelarge
 
   # Big-memory partitions, on C4 (Granite Rapids / Emerald Rapids Xeon) — the
-  # newest family in us-east1-b, and the highest vCPU count available at these
-  # memory sizes. C4 is Hyperdisk-only: pd-ssd is rejected at instance creation
-  # ("pd-ssd disk type cannot be used by c4-* machine type"), so disk_type must
-  # be hyperdisk-balanced.
-  # Requires a C4 CPUs per project per region quota increase in us-east1
-  # (1152 vCPU to run both partitions at full node_count_dynamic_max).
+  # newest family offered in us-west1-b, and the highest vCPU count available at
+  # these memory sizes. C4 is Hyperdisk-only: pd-ssd is rejected at instance
+  # creation ("pd-ssd disk type cannot be used by c4-* machine type"), so
+  # disk_type must be hyperdisk-balanced.
+  # Needs C4 CPUs per project per region in us-west1 (1152 vCPU for both
+  # partitions at full node_count_dynamic_max; 888 granted so far).
   # Placement groups are off: these are single-node, memory-bound jobs.
   - id: bigmem1t_nodeset
     source: community/modules/compute/schedmd-slurm-gcp-v6-nodeset
@@ -199,6 +218,7 @@ deployment_groups:
     - bigmem2t_nodeset
     settings:
       partition_name: bigmem2t
+
 
   - id: slurm_login
     source: community/modules/scheduler/schedmd-slurm-gcp-v6-login
