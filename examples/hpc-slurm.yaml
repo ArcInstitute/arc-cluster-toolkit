@@ -268,6 +268,32 @@ deployment_groups:
     settings:
       partition_name: westdemux
 
+  # us-west1 equivalent of bigmem1t, for memory-heavy work that also needs the
+  # illumina-auto-demux bucket local. Same shape as bigmem1t (c4-highmem-144,
+  # ~1098 GB usable) but on the -lssd variant so it gets /scratch, since /home
+  # is cross-region here.
+  - id: west_bigmem1t_nodeset
+    source: community/modules/compute/schedmd-slurm-gcp-v6-nodeset
+    use: [west_startup_script]
+    settings:
+      region: us-west1
+      zone: us-west1-b
+      subnetwork_self_link: $(network.subnetworks["us-west1/hpc-slurm-west-subnet"].self_link)
+      node_count_dynamic_max: 4
+      machine_type: c4-highmem-144-lssd  # 144 vCPU / 1116 GB + local SSD
+      disk_type: hyperdisk-balanced      # C4 is Hyperdisk-only
+      disk_size_gb: 200
+      bandwidth_tier: gvnic_enabled
+      enable_placement: false
+      allow_automatic_updates: false
+
+  - id: west_bigmem1t_partition
+    source: community/modules/compute/schedmd-slurm-gcp-v6-partition
+    use:
+    - west_bigmem1t_nodeset
+    settings:
+      partition_name: westbigmem1t
+
   - id: slurm_login
     source: community/modules/scheduler/schedmd-slurm-gcp-v6-login
     use: [network]
@@ -285,6 +311,7 @@ deployment_groups:
     - bigmem1t_partition
     - bigmem2t_partition
     - west_partition
+    - west_bigmem1t_partition
     - homefs
     - ultima-bucket
     - illumina-bucket
