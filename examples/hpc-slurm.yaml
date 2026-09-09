@@ -73,11 +73,15 @@ deployment_groups:
         subnet_private_access: "true"
         description: us-west1 subnetwork in hpc-slurm-net
 
+  # BASIC_HDD capacity can be raised in place (and never lowered). Was 1024 GB
+  # and sitting at 84% full, which is tight for the only shared writable
+  # filesystem on the cluster.
   - id: homefs
     source: modules/file-system/filestore
     use: [network]
     settings:
       local_mount: /home
+      size_gb: 5120
 
   - id: ultima-bucket
     source: modules/file-system/pre-existing-network-storage
