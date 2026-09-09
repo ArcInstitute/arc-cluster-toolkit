@@ -42,8 +42,36 @@ deployment_groups:
   modules:
   # Source is an embedded module, denoted by "modules/*" without ./, ../, /
   # as a prefix. To refer to a local module, prefix with ./, ../ or /
+  # A second subnet in us-west1 so compute can sit in the same region as the
+  # illumina-auto-demux bucket (us-west1) instead of reading it cross-country.
+  # GCP VPCs are global, so both subnets live in one network and route
+  # internally; the module creates a Cloud Router + NAT per distinct region
+  # automatically (for_each over subnet regions), and the existing
+  # allow-internal firewall rule already covers 10.0.0.0/9.
+  #
+  # DANGER: entry [0] is treated as the PRIMARY subnet and MUST reproduce the
+  # live us-east1 subnet exactly (hpc-slurm-primary-subnet / 10.0.0.0/24) — the
+  # controller, login node and Filestore all sit on it, and any drift here
+  # replaces it. Both entries must use subnet_ip (never mix with new_bits, which
+  # would recompute every CIDR); the module validates this, but keep it explicit.
   - id: network
     source: modules/network/vpc
+    settings:
+      subnetworks:
+      - subnet_name: hpc-slurm-primary-subnet
+        subnet_region: us-east1
+        subnet_ip: 10.0.0.0/24
+        subnet_private_access: "true"
+        # description is ForceNew: the module's implicit-default path sets it to
+        # "primary subnetwork in <network_name>", so omitting it here nulls the
+        # field and replaces the live subnet (taking the controller and login
+        # node with it). Verified via terraform plan replace_paths.
+        description: primary subnetwork in hpc-slurm-net
+      - subnet_name: hpc-slurm-west-subnet
+        subnet_region: us-west1
+        subnet_ip: 10.1.0.0/24
+        subnet_private_access: "true"
+        description: us-west1 subnetwork in hpc-slurm-net
 
   - id: homefs
     source: modules/file-system/filestore
@@ -200,6 +228,46 @@ deployment_groups:
     settings:
       partition_name: bigmem2t
 
+  # us-west1 partition, co-located with the illumina-auto-demux bucket.
+  # Reads of that bucket become same-region (no inter-region egress, full
+  # throughput) instead of crossing the country on every job.
+  #
+  # TRADE-OFF, deliberate: /home is a Filestore in us-east1-b and Filestore
+  # cannot span regions, so nodes here mount /home over ~65ms NFS. That is fine
+  # for streaming reads but slow for metadata-heavy work (conda activation,
+  # python imports, git). Hence the local-SSD /scratch below — stage from the
+  # bucket into /scratch and do the work there, not in /home.
+  - id: west_startup_script
+    source: modules/scripts/startup-script
+    settings:
+      configure_ssh_host_patterns: ['hpcslurm-*']
+      local_ssd_filesystem:
+        fs_type: ext4
+        mountpoint: /scratch
+        permissions: "1777"
+
+  - id: west_nodeset
+    source: community/modules/compute/schedmd-slurm-gcp-v6-nodeset
+    use: [west_startup_script]
+    settings:
+      region: us-west1
+      zone: us-west1-b
+      subnetwork_self_link: $(network.subnetworks["us-west1/hpc-slurm-west-subnet"].self_link)
+      node_count_dynamic_max: 20
+      machine_type: c4-standard-96-lssd  # 96 vCPU / 360 GB + local SSD
+      disk_type: hyperdisk-balanced      # C4 is Hyperdisk-only
+      disk_size_gb: 200
+      bandwidth_tier: gvnic_enabled
+      enable_placement: false
+      allow_automatic_updates: false
+
+  - id: west_partition
+    source: community/modules/compute/schedmd-slurm-gcp-v6-partition
+    use:
+    - west_nodeset
+    settings:
+      partition_name: westdemux
+
   - id: slurm_login
     source: community/modules/scheduler/schedmd-slurm-gcp-v6-login
     use: [network]
@@ -216,6 +284,7 @@ deployment_groups:
     - bg_compute_partition
     - bigmem1t_partition
     - bigmem2t_partition
+    - west_partition
     - homefs
     - ultima-bucket
     - illumina-bucket
