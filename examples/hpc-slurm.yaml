@@ -180,6 +180,16 @@ deployment_groups:
   # disk_type must be hyperdisk-balanced.
   # Needs C4 CPUs per project per region in us-west1 (1152 vCPU for both
   # partitions at full node_count_dynamic_max; 888 granted so far).
+  # Boot disk is 10240 GB to match computemedium/computelarge, so a job that
+  # stages reads on one partition doesn't run out of space on another (was
+  # 2048; raised 2026-09-10 on Joseph Min's report). Note this is capacity
+  # only: the nodeset module exposes no IOPS/throughput knobs, so all these
+  # disks run Hyperdisk Balanced defaults regardless of size.
+  # Second quota ceiling, easy to miss: Hyperdisk Balanced Capacity per
+  # project per region in us-west1 is 81920 GB, which only backs 8 concurrent
+  # 10 TiB nodes. Full node_count_dynamic_max across all four nodesets needs
+  # 880640 GB; increase requested 2026-09-10 alongside the C4 CPU ask. A node
+  # stuck PENDING can be either ceiling, not just CPUs.
   # Placement groups are off: these are single-node, memory-bound jobs.
   - id: bigmem1t_nodeset
     source: community/modules/compute/schedmd-slurm-gcp-v6-nodeset
@@ -188,7 +198,7 @@ deployment_groups:
       node_count_dynamic_max: 4
       machine_type: c4-highmem-144  # 144 vCPU / 1116 GB
       disk_type: hyperdisk-balanced
-      disk_size_gb: 2048
+      disk_size_gb: 10240
       bandwidth_tier: gvnic_enabled
       enable_placement: false
       allow_automatic_updates: false
@@ -207,7 +217,7 @@ deployment_groups:
       node_count_dynamic_max: 2
       machine_type: c4-highmem-288  # 288 vCPU / 2232 GB
       disk_type: hyperdisk-balanced
-      disk_size_gb: 2048
+      disk_size_gb: 10240
       bandwidth_tier: gvnic_enabled
       enable_placement: false
       allow_automatic_updates: false
