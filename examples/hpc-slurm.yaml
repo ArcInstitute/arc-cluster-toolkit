@@ -110,6 +110,49 @@ deployment_groups:
     source: modules/scripts/startup-script
     settings:
       configure_ssh_host_patterns: ['hpcslurm-*']
+      runners:
+      - type: shell
+        destination: install_uv.sh
+        content: |
+          #!/bin/bash
+          # Install uv cluster-wide so users don't each bootstrap their own copy.
+          #
+          # Pinned, not "latest": compute nodes are ephemeral and boot
+          # continuously, so an unpinned install would leave nodes started weeks
+          # apart running different uv builds.
+          #
+          # Never fatal. A failing startup script takes slurmd with it and
+          # slurm-gcp deletes the VM before the log can be read, which surfaces
+          # as an unexplained ResumeTimeout. A transient astral.sh outage must
+          # not cost us a node, so every failure path still exits 0.
+          #
+          # Symlinked into /usr/local/bin rather than exported via
+          # /etc/profile.d: profile.d is sourced only by LOGIN shells, but
+          # sbatch job scripts run as non-login shells whose PATH is
+          # /usr/local/bin:/usr/bin -- profile.d alone would leave uv missing
+          # inside every batch job.
+          set -u
+          UV_VERSION=0.12.15
+          INSTALL_DIR=/opt/uv/bin
+
+          if [ -x "${INSTALL_DIR}/uv" ] && "${INSTALL_DIR}/uv" --version 2>/dev/null | grep -qw "${UV_VERSION}"; then
+            echo "uv ${UV_VERSION} already present, skipping download"
+          else
+            mkdir -p "${INSTALL_DIR}"
+            if curl -LsSf --retry 3 --retry-delay 2 --max-time 120 \
+                 "https://astral.sh/uv/${UV_VERSION}/install.sh" \
+               | env UV_INSTALL_DIR="${INSTALL_DIR}" INSTALLER_NO_MODIFY_PATH=1 sh; then
+              echo "uv ${UV_VERSION} installed to ${INSTALL_DIR}"
+            else
+              echo "WARNING: uv install failed; continuing so slurmd still starts" >&2
+            fi
+          fi
+
+          for b in uv uvx; do
+            [ -x "${INSTALL_DIR}/${b}" ] && ln -sfn "${INSTALL_DIR}/${b}" "/usr/local/bin/${b}"
+          done
+
+          exit 0
 
 
   - id: debug_nodeset
@@ -255,3 +298,10 @@ deployment_groups:
     - slurm_login
     settings:
       enable_controller_public_ips: true
+      # The five nodesets pick up ssh_script through their own `use`, but the
+      # login node cannot: the startup-script module exposes startup_script,
+      # compute_startup_script and controller_startup_script -- there is no
+      # login_startup_script output for `use` to wire up. Without this explicit
+      # line uv installs everywhere except the one machine users actually type
+      # it on.
+      login_startup_script: $(ssh_script.startup_script)
