@@ -221,18 +221,25 @@ deployment_groups:
   # these memory sizes. C4 is Hyperdisk-only: pd-ssd is rejected at instance
   # creation ("pd-ssd disk type cannot be used by c4-* machine type"), so
   # disk_type must be hyperdisk-balanced.
-  # Needs C4 CPUs per project per region in us-west1 (1152 vCPU for both
-  # partitions at full node_count_dynamic_max; 888 granted so far).
+  # C4 CPUs per project per region in us-west1 is 888 vCPU, shared by all four
+  # C4 nodesets (computemedium, computelarge, bigmem1t, bigmem2t): e.g. 4
+  # computelarge nodes, or 2 computelarge + 5 computemedium. The ask for 12672
+  # (every nodeset at node_count_dynamic_max) was denied 2026-09-15 for lack of
+  # us-west1 capacity (support case 75266298), so 888 is the cap, not a
+  # partial grant.
   # Boot disk is 10240 GB to match computemedium/computelarge, so a job that
   # stages reads on one partition doesn't run out of space on another (was
   # 2048; raised 2026-09-10 on Joseph Min's report). Note this is capacity
   # only: the nodeset module exposes no IOPS/throughput knobs, so all these
   # disks run Hyperdisk Balanced defaults regardless of size.
   # Second quota ceiling, easy to miss: Hyperdisk Balanced Capacity per
-  # project per region in us-west1 is 81920 GB, which only backs 8 concurrent
-  # 10 TiB nodes. Full node_count_dynamic_max across all four nodesets needs
-  # 880640 GB; increase requested 2026-09-10 alongside the C4 CPU ask. A node
-  # stuck PENDING can be either ceiling, not just CPUs.
+  # project per region in us-west1 is 180319 GB (2026-10-09), which backs 17
+  # concurrent 10 TiB nodes across C4 *and* C4D. The 880640 GB ask was declined
+  # (case 75321307, 2026-09-20); 333919 GB (+153600 for c4dhighmem) was filed
+  # 2026-10-09 on quota preference hdb-capacity-us-west1. Hitting
+  # either ceiling looks the same: the node goes down# with "GCP Error: Quota
+  # ... exceeded", slurmsync returns it to idle~, and the job requeues onto
+  # another C4 node that fails the same way, until running jobs free quota.
   # Placement groups are off: these are single-node, memory-bound jobs.
   - id: bigmem1t_nodeset
     source: community/modules/compute/schedmd-slurm-gcp-v6-nodeset
@@ -272,6 +279,32 @@ deployment_groups:
     settings:
       partition_name: bigmem2t
 
+  # 1.5 TB partition on C4D (AMD Turin), added because us-west1 has no C4
+  # capacity past 888 vCPU. The account team granted C4D CPUs per project per
+  # region = 3000 vCPU (live 2026-10-09), i.e. 15 nodes of 192 vCPU. Turin has
+  # AVX-512 (unlike C2D), so `cyto` runs. Its own partition, not a second
+  # nodeset in computelarge: Slurm can't see GCP quota and would keep picking
+  # C4 nodes that fail to resume. C4D is Hyperdisk-only, and these 10 TiB boot
+  # disks share the Hyperdisk ceiling above with the C4 nodesets.
+  - id: c4dhighmem_nodeset
+    source: community/modules/compute/schedmd-slurm-gcp-v6-nodeset
+    use: [network, ssh_script]
+    settings:
+      node_count_dynamic_max: 15
+      machine_type: c4d-highmem-192  # 192 vCPU / 1512 GB
+      disk_type: hyperdisk-balanced
+      disk_size_gb: 10240
+      bandwidth_tier: gvnic_enabled
+      enable_placement: false
+      allow_automatic_updates: false
+
+  - id: c4dhighmem_partition
+    source: community/modules/compute/schedmd-slurm-gcp-v6-partition
+    use:
+    - c4dhighmem_nodeset
+    settings:
+      partition_name: c4dhighmem
+
 
   - id: slurm_login
     source: community/modules/scheduler/schedmd-slurm-gcp-v6-login
@@ -289,6 +322,7 @@ deployment_groups:
     - bg_compute_partition
     - bigmem1t_partition
     - bigmem2t_partition
+    - c4dhighmem_partition
     - homefs
     - ultima-bucket
     - illumina-bucket
