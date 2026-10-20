@@ -36,6 +36,19 @@ vars:
   # controller resolution needed a project-wide VmDnsSetting override.
   region: us-west1
   zone: us-west1-b
+  # Compute-node image. SchedMD revoked public access to the slurm-gcp 6-8,
+  # 6-9 and 6-10 image families on 2026-10-20: every node create failed with
+  # "Required 'compute.images.useReadOnly' permission for
+  # 'projects/schedmd-slurm-public'". The families still public (6-11, 6-12)
+  # ship Slurm 25.11, but the controller runs 24.05.5 (slurm-gcp 6.8) and
+  # slurmd must not be newer than slurmctld. So nodes boot from our own copy of
+  # the exact 6.8 image the controller was built from
+  # (slurm-gcp-6-8-hpc-rocky-linux-8-1736357155). The controller and login still
+  # name the SchedMD family; changing that recreates those VMs, so a rebuild of
+  # either needs this image too.
+  slurm_image:
+    family: arc-slurm-gcp-6-8-rocky8
+    project: arc-cyto
   enable_cleanup_compute: true
   ultima_bucket_name: ultima-auto-demux
 
@@ -159,6 +172,8 @@ deployment_groups:
     source: community/modules/compute/schedmd-slurm-gcp-v6-nodeset
     use: [network,ssh_script]
     settings:
+      instance_image: $(vars.slurm_image)
+      instance_image_custom: true
       node_count_dynamic_max: 4
       machine_type: n2-standard-4
       enable_placement: false # the default is: true
@@ -184,6 +199,8 @@ deployment_groups:
     source: community/modules/compute/schedmd-slurm-gcp-v6-nodeset
     use: [network,ssh_script]
     settings:
+      instance_image: $(vars.slurm_image)
+      instance_image_custom: true
       node_count_dynamic_max: 40
       machine_type: c4-standard-96  # 96 vCPU / 48 Slurm cores / 360 GB (was c2d-standard-56: 28 cores / 224 GB)
       disk_type: hyperdisk-balanced
@@ -202,6 +219,8 @@ deployment_groups:
     source: community/modules/compute/schedmd-slurm-gcp-v6-nodeset
     use: [network,ssh_script]
     settings:
+      instance_image: $(vars.slurm_image)
+      instance_image_custom: true
       node_count_dynamic_max: 40
       machine_type: c4-standard-192  # 192 vCPU / 96 Slurm cores / 720 GB (was c2d-standard-112: 56 cores / 448 GB)
       disk_type: hyperdisk-balanced  # C4 is Hyperdisk-only
@@ -245,6 +264,8 @@ deployment_groups:
     source: community/modules/compute/schedmd-slurm-gcp-v6-nodeset
     use: [network, ssh_script]
     settings:
+      instance_image: $(vars.slurm_image)
+      instance_image_custom: true
       node_count_dynamic_max: 4
       machine_type: c4-highmem-144  # 144 vCPU / 1116 GB
       disk_type: hyperdisk-balanced
@@ -264,6 +285,8 @@ deployment_groups:
     source: community/modules/compute/schedmd-slurm-gcp-v6-nodeset
     use: [network, ssh_script]
     settings:
+      instance_image: $(vars.slurm_image)
+      instance_image_custom: true
       node_count_dynamic_max: 2
       machine_type: c4-highmem-288  # 288 vCPU / 2232 GB
       disk_type: hyperdisk-balanced
@@ -290,6 +313,8 @@ deployment_groups:
     source: community/modules/compute/schedmd-slurm-gcp-v6-nodeset
     use: [network, ssh_script]
     settings:
+      instance_image: $(vars.slurm_image)
+      instance_image_custom: true
       node_count_dynamic_max: 15
       machine_type: c4d-highmem-192  # 192 vCPU / 1512 GB
       disk_type: hyperdisk-balanced
